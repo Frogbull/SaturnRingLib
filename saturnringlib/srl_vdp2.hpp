@@ -59,6 +59,16 @@ namespace SRL
             B1 = 3,
         };
 
+        /**  @brief converts an SRL TextureColorMode enum to its corresponding SGL macro for VDP2
+         *   @param colorMode the colorMode to convert
+         *   @return SGL VDP2 color macro corresponding to the colormode
+         */
+        static uint16_t GetSGLColorMode(SRL::CRAM::TextureColorMode colorMode)
+        {
+            static const uint8_t sglColor[] = { 0x30,0x30,0x00,0x10,0x10,0x10,0x10 };
+            return (uint16_t)sglColor[(uint16_t)colorMode];
+        }
+
         /** @brief Manages VDP2 VRAM allocation
          */
         class VRAM
@@ -218,6 +228,83 @@ namespace SRL
 
                 return alloc;
             }
+
+            /** @brief Automatically allocates bitmap for specified screen
+            * @param info Bitmap data description
+            * @param screen The screen identifier
+            * @return Pointer to the allocated memory
+            * @note The maximum allocation size supported by this function is 0x40000 bytes (half of VRAM).
+            */
+            inline static void* AutoAllocateBmp(Bitmap::BitmapInfo& info, int16_t screen)
+            {
+                void* alloc = nullptr;
+                uint8_t numCycles = 2; 
+                //chack that image size is compatible
+                if((info.Width>1024)||(info.Height>512)||(screen == scnRBG0 && info.Width>512))
+                {
+                    Debug::Assert("Bmp Allocation Failed: Unsupported image size");
+                    return nullptr;
+                }
+                //scale based on bitdepth
+                uint32_t size = info.Height>256 ? 512 : 256;
+                size *= info.Width>512 ? 1024 : 512; 
+                if(info.ColorMode==CRAM::TextureColorMode::Paletted16)
+                {
+                    size>>=1;
+                    numCycles>>=1;
+                }
+                else if(info.ColorMode==CRAM::TextureColorMode::RGB555)
+                {
+                    size<<=1;
+                    numCycles<<=1;
+                }
+
+                if(size>262144) //case: bmp is too large for allocator at this color depth
+                {
+                    Debug::Assert("Bmp Allocation Failed: Size exceeds 2 banks");
+                    return nullptr;
+                }
+                else if(size>131072)//case: bmp requires 2 out of the 4 VRAM banks
+                { 
+                    if((uint32_t)bankBot[0]==VDP2_VRAM_A0 && (uint32_t)bankBot[1]==VDP2_VRAM_A1)
+                    {
+                        alloc = VRAM::Allocate(131072, 32, VramBank::A0, numCycles);
+                        VRAM::Allocate(131072, 32, VramBank::A1, numCycles);
+                    }
+                    else if((uint32_t)bankBot[1]==VDP2_VRAM_A1 && (uint32_t)bankBot[2]==VDP2_VRAM_B0)
+                    {
+                        alloc = VRAM::Allocate(131072, 32, VramBank::A1, numCycles);
+                        VRAM::Allocate(131072, 32, VramBank::B0, numCycles);
+                    }
+                    else 
+                    {
+                        Debug::Assert("Bmp Allocation Failed: Insufficient VRAM");
+                        return nullptr;
+                    }
+                }
+                else//case: bmp requires 1 or 1/2 of a VRAM bank
+                { 
+                    alloc = VRAM::Allocate(size, 32, VramBank::B0, numCycles);
+                    if (alloc == nullptr) alloc = VRAM::Allocate(size, 32, VramBank::A1,numCycles);
+                    if (alloc == nullptr) alloc = VRAM::Allocate(size, 32, VramBank::A0, numCycles);
+                    if (alloc == nullptr) alloc = VRAM::Allocate(size, 32, VramBank::B1, numCycles);
+                    if (alloc == nullptr) SRL::Debug::Assert("Bmp Allocation failed: insufficient VRAM");
+                }
+                SRL::Debug::Print(3,17,"Size = %d",size);
+                SRL::Debug::Print(3,18,"Address: %x",(uint32_t)alloc-VDP2_VRAM_A0);
+                return alloc;
+            }
+
+            /** @brief Overwrites a specified VRAM region with 0 data.
+             *  @param Address the vram address of the area to blank.
+             *  @param Size of area to overwrite (in bytes).
+             */
+            static void Blank(void* address, uint32_t size)
+            {
+                if(address<(void*)VDP2_VRAM_A0||(uint8_t*)address+size> bankTop[3])return;                
+                for(uint8_t* current = (uint8_t*)address; current< (uint8_t*)address+size; current++) *current = 0; 
+            }
+    
         };
 
         /** @brief Bitfield recording all Currently enabled Scroll Screens*/
@@ -649,8 +736,6 @@ namespace SRL
                 return cellOffset;
             }
 
-
-
             /** @brief Gets the Pallet Bank That must be included in Map Data to Reference a Palette in CRAM
              * @param paletteID (optional) specify to reference an arbitrary palette, otherwise uses Id from ScrollScreen::TilePalette
              * @return The Formatted Palette ID to be included in Map Indicies to reference a specified palette
@@ -706,6 +791,104 @@ namespace SRL
 
         };
 
+        /** @brief extension of ScrollScreen interface to include support for loading bitmap images.
+        * Used in NBG0, NBG1, and RBG0 interfaces.
+        */
+        template<class ScreenType, int16_t Id, uint16_t On>
+        class BmpScreen: public ScrollScreen<ScreenType, Id, On>
+        {
+        public:
+        
+            /** @brief Loads a bitmap into VRAM and registers it for display on the ScrollScreen.
+            *  @details The maximum supported loading size is 2 VRAM banks (262,144 bytes). 
+            *  Furthermore, VDP2 Bitmaps can only be stored in VRAM with one of 4 container sizes:
+            *  512x256, 512x512, 1024x256, or 1024x512.
+            *  These factors place the following bounds on the maximum size and VRAM requirements of a bitmap scroll:
+            *   
+            *  |Bitdepth | Max Image Size     |    VRAM Usage     |
+            *  |---------|--------------------|-------------------|
+            *  | 4bpp    | 1024x512           | 1/2, 1, or 2 banks|
+            *  | 8bpp    | 512x512 or 1024x256| 1 or 2 banks      |
+            *  | 16bpp   | 512x256            | Always 2 banks    |
+            *
+            *  @note If source Bitmap size is not equal to one of the container sizes, excess VRAM will be wasted.
+            *  To conserve VRAM, consider converting to tilemap format with Bmp2Tile for smaller images when possible.
+            *  @note RBG0 only supports the 512x256 and 512x512 containers. Because RBG0 does not need to reserve an extra bank
+            *  for map data in ths mode, this is one case where using the bitmap format may save VRAM resources over tilemaps.
+            *  @param bmp Pointer to the bitmap interface to load from.
+            */
+            static void LoadBitmap(SRL::Bitmap::IBitmap* bmp)
+            {
+                SRL::Bitmap::BitmapInfo info = bmp->GetInfo();
+                if ((uint32_t)ScreenType::CellAddress < VDP2_VRAM_A0)
+                {
+                    ScreenType::CellAddress =  VRAM::AutoAllocateBmp(info, ScreenType::ScreenID);
+                }
+                
+                if(ScreenType::CellAddress==nullptr)
+                {
+                    SRL::Debug::Assert("Bitmap Allocation Failed");
+                    return;
+                }
+                
+                Bmp2VRAM(bmp->GetData(),ScreenType::CellAddress,info);
+                int colorID = 0;
+                if (info.Palette!=nullptr && info.Palette->Count!=0)
+                {
+                    if(ScreenType::TilePalette.GetData()==nullptr)
+                    {  
+                        if(colorID = SRL::CRAM::GetFreeBank(info.ColorMode) < 0)
+                        {
+                            SRL::Debug::Assert("Palette Load Failed- no CRAM Palettes available");
+                            return;
+                        }
+                        else
+                        {
+                            SRL::CRAM::SetBankUsedState(colorID, info.ColorMode, true);
+                            ScreenType::TilePalette = SRL::CRAM::Palette(info.ColorMode, colorID);      
+                        }
+                    }
+                    ScreenType::TilePalette.Load(info.Palette->Colors, info.Palette->Count);
+                }
+                ScreenType::Init(info);
+            } 
+
+            /** @brief Copies Bmp data to VRAM
+            * @param BmpData Cell Data to copy.
+            * @param BmpAdr VRAM address to copy to.
+            * @param info info about bmp 
+            * @note When the source image does not completely fill the required bitmap container the transfer will pad
+            * each line of the image to allign to the container width. However to save on overhead the padded VRAM areas
+            * are not cleared when using this function, so may display garbage data.
+            * A VRAM area can be zeroed out if needed with VDP2::VRAM::Blank();
+            */
+            inline static void Bmp2VRAM(void* bmpData, void* bmpAdr, SRL::Bitmap::BitmapInfo info)
+            {
+                uint8_t* data = (uint8_t*)bmpData;
+                uint8_t* vram = (uint8_t*)bmpAdr;
+                uint16_t dataWidth = info.Width;
+                uint16_t containerWidth = dataWidth<=512 ?  512 : 1024; 
+                if(info.ColorMode == CRAM::TextureColorMode::RGB555)
+                {
+                    dataWidth<<=1;
+                    containerWidth<<=1;
+                }
+                else if(info.ColorMode == CRAM::TextureColorMode::Paletted16)
+                {
+                    dataWidth>>=1;
+                    containerWidth>>=1;
+                }
+                int i;
+                for(i = 0; i<info.Height;++i)
+                {
+                   slDMACopy(data,vram,dataWidth);
+                   vram+=containerWidth;
+                   data+=dataWidth;
+                }  
+                SRL::Debug::Print(2,23,"Lines: %d",i);          
+            }
+        };
+
         /** @brief NBG0 interface
          *  @details Normal Background Scroll 0:
          *      -Available color depths: Paletted16, Paletted256, RGB555
@@ -729,6 +912,19 @@ namespace SRL
                 slPlaneNbg0(info.PlaneSize);
                 slMapNbg0(MapAddress, MapAddress, MapAddress, MapAddress);
             }
+
+            /** @brief Initializes the ScrollScreen's bitmap specifications
+             * @param info bitmap info
+             */
+            static void Init(SRL::Bitmap::BitmapInfo& info)
+            {
+                //(building bits of sgl size flag based on bitmap height/width)
+                uint16_t sglFlag = info.Height<=256? 0x2 : 0x6;
+                sglFlag |= info.Width<= 512 ?  0 : 1<<3; 
+                slBitMapNbg0((uint16_t)info.ColorMode, sglFlag, NBG0::CellAddress);  
+                slBMPaletteNbg0(NBG0::TilePalette.GetId());
+            }
+
 
             /** @brief Set the 2x2 grid of planes for the layer
              * @param a First plane
@@ -773,6 +969,17 @@ namespace SRL
                 slPageNbg1(NBG1::CellAddress, (void*)NBG1::TilePalette.GetData(), info.MapMode);
                 slPlaneNbg1(info.PlaneSize);
                 slMapNbg1(MapAddress, MapAddress, MapAddress, MapAddress);
+            }
+            /** @brief Initializes the ScrollScreen's bitmap specifications
+             * @param info bitmap info
+             */
+            static void Init(SRL::Bitmap::BitmapInfo& info)
+            {
+                //(building bits of sgl size flag based on bitmap height/width)
+                uint16_t sglFlag = info.Height<=256? 0x2 : 0x6;
+                sglFlag |= info.Width<= 512 ?  0 : 1<<3; 
+                slBitMapNbg1((uint16_t)info.ColorMode, sglFlag, NBG1::CellAddress);  
+                slBMPaletteNbg1(NBG1::TilePalette.GetId());
             }
 
             /** @brief Set the 2x2 grid of planes for the layer
