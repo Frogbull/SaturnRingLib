@@ -2,6 +2,7 @@
 **.zip
 
 **/yabause.ini
+**/imgui.ini
 
 /[Dd]ocumentation/*
 !/[Dd]ocumentation/resources
