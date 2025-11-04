@@ -232,10 +232,11 @@ namespace SRL
             /** @brief Automatically allocates bitmap for specified screen
             * @param info Bitmap data description
             * @param screen The screen identifier
+            * @param size optional pointer to pass the resulting allocation size back from function
             * @return Pointer to the allocated memory
             * @note The maximum allocation size supported by this function is 0x40000 bytes (half of VRAM).
             */
-            inline static void* AutoAllocateBmp(Bitmap::BitmapInfo& info, int16_t screen)
+            inline static void* AutoAllocateBmp(Bitmap::BitmapInfo& info, int16_t screen, int* size = nullptr)
             {
                 void* alloc = nullptr;
                 uint8_t numCycles = 2; 
@@ -246,25 +247,25 @@ namespace SRL
                     return nullptr;
                 }
                 //scale based on bitdepth
-                uint32_t size = info.Height>256 ? 512 : 256;
-                size *= info.Width>512 ? 1024 : 512; 
+                uint32_t sz = info.Height>256 ? 512 : 256;
+                sz *= info.Width>512 ? 1024 : 512; 
                 if(info.ColorMode==CRAM::TextureColorMode::Paletted16)
                 {
-                    size>>=1;
+                    sz>=1;
                     numCycles>>=1;
                 }
                 else if(info.ColorMode==CRAM::TextureColorMode::RGB555)
                 {
-                    size<<=1;
+                    sz<<=1;
                     numCycles<<=1;
                 }
 
-                if(size>262144) //case: bmp is too large for allocator at this color depth
+                if(sz>262144) //case: bmp is too large for allocator at this color depth
                 {
                     Debug::Assert("Bmp Allocation Failed: Size exceeds 2 banks");
                     return nullptr;
                 }
-                else if(size>131072)//case: bmp requires 2 out of the 4 VRAM banks
+                else if(sz>131072)//case: bmp requires 2 out of the 4 VRAM banks
                 { 
                     if((uint32_t)bankBot[0]==VDP2_VRAM_A0 && (uint32_t)bankBot[1]==VDP2_VRAM_A1)
                     {
@@ -282,16 +283,17 @@ namespace SRL
                         return nullptr;
                     }
                 }
-                else//case: bmp requires 1 or 1/2 of a VRAM bank
+                else//case: bmp requires 1 or 1/2 VRAM bank
                 { 
-                    alloc = VRAM::Allocate(size, 32, VramBank::B0, numCycles);
-                    if (alloc == nullptr) alloc = VRAM::Allocate(size, 32, VramBank::A1,numCycles);
-                    if (alloc == nullptr) alloc = VRAM::Allocate(size, 32, VramBank::A0, numCycles);
-                    if (alloc == nullptr) alloc = VRAM::Allocate(size, 32, VramBank::B1, numCycles);
+                    alloc = VRAM::Allocate(sz, 32, VramBank::B0, numCycles);
+                    if (alloc == nullptr) alloc = VRAM::Allocate(sz, 32, VramBank::A1,numCycles);
+                    if (alloc == nullptr) alloc = VRAM::Allocate(sz, 32, VramBank::A0, numCycles);
+                    if (alloc == nullptr) alloc = VRAM::Allocate(sz, 32, VramBank::B1, numCycles);
                     if (alloc == nullptr) SRL::Debug::Assert("Bmp Allocation failed: insufficient VRAM");
                 }
-                SRL::Debug::Print(3,17,"Size = %d",size);
-                SRL::Debug::Print(3,18,"Address: %x",(uint32_t)alloc-VDP2_VRAM_A0);
+                if(size) *size = sz;
+               // SRL::Debug::Print(3,17,"Size = %d",size);
+               // SRL::Debug::Print(3,18,"Address: %x",(uint32_t)alloc-VDP2_VRAM_A0);
                 return alloc;
             }
 
@@ -408,11 +410,11 @@ namespace SRL
              */
             static inline Tilemap::TilemapInfo Info = Tilemap::TilemapInfo();
 
-            /** Size of manually allocated VRAM for Cell Data
+            /** Size of currently allocated VRAM for Cell Data or Bitmap data
              */
             inline static int CellAllocSize = -1;
 
-            /** @brief Size of manually allocated VRAM for Map Data
+            /** @brief Size of currently allocated VRAM for Map Data
              */
             inline static int MapAllocSize = -1;
 
@@ -429,15 +431,17 @@ namespace SRL
              * @note As RBG0 must reserve dedicated VRAM banks always perform loading/allocation 
              * for RBG0 before NBG0-3 screens if using it.
              */
+
             inline static void LoadTilemap(SRL::Tilemap::ITilemap& tilemap)
             {
                 SRL::Tilemap::TilemapInfo myInfo = tilemap.GetInfo();
                 ScreenType::Info = tilemap.GetInfo();
-
+                int autoMapSize = 0;
                 if ((uint32_t)ScreenType::MapAddress < VDP2_VRAM_A0)
                 {
-                    ScreenType::MapAddress = VRAM::AutoAllocateMap(myInfo, ScreenType::ScreenID);
+                    ScreenType::MapAddress = VRAM::AutoAllocateMap(myInfo, ScreenType::ScreenID,&autoMapSize);
                     if ((uint32_t)ScreenType::MapAddress < VDP2_VRAM_A0) return;
+                    else ScreenType::MapAllocSize = autoMapSize;
 
                 }
                 else if (ScreenType::MapAllocSize < (ScreenType::Info.MapWidth * ScreenType::Info.MapHeight) << (1+!ScreenType::Info.MapMode))
@@ -455,6 +459,7 @@ namespace SRL
                         SRL::Debug::Assert("Tilemap Load Failed- CEL DATA exceeds existing VRAM allocation");
                         return;
                     }
+                    else ScreenType::CellAllocSize = myInfo.CellByteSize;
                 }
                 else if (ScreenType::CellAllocSize < ScreenType::Info.CellByteSize)
                 {
@@ -463,7 +468,6 @@ namespace SRL
                 }
 
                 int colorID = 0;
-
                 if (ScreenType::Info.ColorMode != SRL::CRAM::TextureColorMode::RGB555)
                 {
                     if(ScreenType::TilePalette.GetData()==nullptr)
@@ -473,7 +477,7 @@ namespace SRL
                             SRL::Debug::Assert("Tilemap Palette Load Failed- no CRAM Palettes available");
                             return;
                         }
-                        
+
                         SRL::CRAM::SetBankUsedState(colorID, ScreenType::Info.ColorMode, true);
                         ScreenType::TilePalette = SRL::CRAM::Palette(ScreenType::Info.ColorMode, colorID);      
                     }
@@ -820,17 +824,18 @@ namespace SRL
             static void LoadBitmap(SRL::Bitmap::IBitmap* bmp)
             {
                 SRL::Bitmap::BitmapInfo info = bmp->GetInfo();
+                int autoSize = 0;
                 if ((uint32_t)ScreenType::CellAddress < VDP2_VRAM_A0)
                 {
-                    ScreenType::CellAddress =  VRAM::AutoAllocateBmp(info, ScreenType::ScreenID);
+                    ScreenType::CellAddress =  VRAM::AutoAllocateBmp(info, ScreenType::ScreenID,&autoSize);
+                    if(ScreenType::CellAddress) ScreenType::CellAllocSize = autoSize;
                 }
-                
                 if(ScreenType::CellAddress==nullptr)
                 {
                     SRL::Debug::Assert("Bitmap Allocation Failed");
                     return;
                 }
-                
+                VRAM::Blank(ScreenType::CellAddress,ScreenType::CellAllocSize);
                 Bmp2VRAM(bmp->GetData(),ScreenType::CellAddress,info);
                 int colorID = 0;
                 if (info.Palette!=nullptr && info.Palette->Count!=0)
@@ -857,10 +862,10 @@ namespace SRL
             * @param BmpData Cell Data to copy.
             * @param BmpAdr VRAM address to copy to.
             * @param info info about bmp 
-            * @note When the source image does not completely fill the required bitmap container the transfer will pad
-            * each line of the image to allign to the container width. However to save on overhead the padded VRAM areas
-            * are not cleared when using this function, so may display garbage data.
-            * A VRAM area can be zeroed out if needed with VDP2::VRAM::Blank();
+            * @note When the source image does not completely fill the container the
+            * transfer will pad each line of the image to allign to the container width.
+            * However the padded VRAM is not cleared when using this function, so may display
+            * garbage data. Use VDP2::VRAM::Blank() beforehand to clear all data to zero if desired.
             */
             inline static void Bmp2VRAM(void* bmpData, void* bmpAdr, SRL::Bitmap::BitmapInfo info)
             {
@@ -885,7 +890,7 @@ namespace SRL
                    vram+=containerWidth;
                    data+=dataWidth;
                 }  
-                SRL::Debug::Print(2,23,"Lines: %d",i);          
+                //SRL::Debug::Print(2,23,"Lines: %d",i);          
             }
         };
 
@@ -895,7 +900,7 @@ namespace SRL
          *      -Available Modes: Bitmap, Tilemap
          *      -Available features: Vertical/Horizontal Scrolling, Scaling, LineScroll Tables
          */
-        class NBG0 : public ScrollScreen<NBG0, scnNBG0, NBG0ON>
+        class NBG0 : public BmpScreen<NBG0, scnNBG0, NBG0ON>
         {
         public:
             /** @brief VRAM address of line scroll table
@@ -921,7 +926,7 @@ namespace SRL
                 //(building bits of sgl size flag based on bitmap height/width)
                 uint16_t sglFlag = info.Height<=256? 0x2 : 0x6;
                 sglFlag |= info.Width<= 512 ?  0 : 1<<3; 
-                slBitMapNbg0((uint16_t)info.ColorMode, sglFlag, NBG0::CellAddress);  
+                slBitMapNbg0(GetSGLColorMode(info.ColorMode), sglFlag, NBG0::CellAddress);  
                 slBMPaletteNbg0(NBG0::TilePalette.GetId());
             }
 
@@ -953,7 +958,7 @@ namespace SRL
          *      -Available Modes: Bitmap, Tilemap
          *      -Available features: Vertical/Horizontal Scrolling, Scaling, LineScroll Tables
          */
-        class NBG1 : public ScrollScreen<NBG1, scnNBG1, NBG1ON>
+        class NBG1 : public BmpScreen<NBG1, scnNBG1, NBG1ON>
         {
         public:
             /** @brief VRAM address of line scroll table
@@ -978,7 +983,7 @@ namespace SRL
                 //(building bits of sgl size flag based on bitmap height/width)
                 uint16_t sglFlag = info.Height<=256? 0x2 : 0x6;
                 sglFlag |= info.Width<= 512 ?  0 : 1<<3; 
-                slBitMapNbg1((uint16_t)info.ColorMode, sglFlag, NBG1::CellAddress);  
+                slBitMapNbg1(GetSGLColorMode(info.ColorMode), sglFlag, NBG1::CellAddress);  
                 slBMPaletteNbg1(NBG1::TilePalette.GetId());
             }
 
@@ -1105,7 +1110,7 @@ namespace SRL
          *      -Coefficient table allows per line and per pixel scaling
          *       to simulate perspective
          */
-        class RBG0 : public ScrollScreen<RBG0, scnRBG0, RBG0ON>
+        class RBG0 : public BmpScreen<RBG0, scnRBG0, RBG0ON>
         {
         public:
             /** @brief VRAM Address of RBG0 Coefficient table
@@ -1468,12 +1473,6 @@ namespace SRL
             slRparaInitSet((ROTSCROLL*)(VDP2_VRAM_A0 + 0x1ff00));
         }
 
-        /** @brief data strUcture of a VDP2 color offset to be set in Offset A or Offset B
-         *  @details The offset data that will be set is a signed 9 bit value per color channel.
-         *  The valid range of inputs is -255 to +255. The sign determines whether the color offset 
-         *  is additive or subtractive. Values outside the range will be clamped to it when
-         *  the offset is set. See SetColorOffsetA and SetColorOffsetB for more details. 
-         */
         /** @brief Data structure of a VDP2 color offset to be set in Offset A or Offset B
          *  @details The offset data that will be set is a signed 9 bit value per color channel.
          *  The valid range of inputs is -255 to +255. The sign determines whether the color offset 
