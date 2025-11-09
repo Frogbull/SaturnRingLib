@@ -132,4 +132,8 @@ namespace SRL::Bitmap
          */
         virtual BitmapInfo GetInfo() const = 0;
     };
+
+    /** @brief Virtual destructor IBitmap definition
+     */
+    inline IBitmap::~IBitmap() {}
 }
