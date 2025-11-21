@@ -818,7 +818,7 @@ namespace SRL
             *  @note If source Bitmap size is not equal to one of the container sizes, excess VRAM will be wasted.
             *  To conserve VRAM, consider converting to tilemap format with Bmp2Tile for smaller images when possible.
             *  @note RBG0 only supports the 512x256 and 512x512 containers. Because RBG0 does not need to reserve an extra bank
-            *  for map data in ths mode, this is one case where using the bitmap format may save VRAM resources over tilemaps.
+            *  for map data in this mode, this is one case where using the bitmap format may save VRAM resources over tilemaps.
             *  @param bmp Pointer to the bitmap interface to load from.
             */
             static void LoadBitmap(SRL::Bitmap::IBitmap* bmp)
@@ -837,23 +837,45 @@ namespace SRL
                 }
                 VRAM::Blank(ScreenType::CellAddress,ScreenType::CellAllocSize);
                 Bmp2VRAM(bmp->GetData(),ScreenType::CellAddress,info);
+                /*                
                 int colorID = 0;
+                if (ScreenType::Info.ColorMode != SRL::CRAM::TextureColorMode::RGB555)
+                {
+                    if(ScreenType::TilePalette.GetData()==nullptr)
+                    {
+                        if ((colorID = SRL::CRAM::GetFreeBank(ScreenType::Info.ColorMode)) < 0)
+                        {
+                            SRL::Debug::Assert("Tilemap Palette Load Failed- no CRAM Palettes available");
+                            return;
+                        }
+
+                        SRL::CRAM::SetBankUsedState(colorID, ScreenType::Info.ColorMode, true);
+                        ScreenType::TilePalette = SRL::CRAM::Palette(ScreenType::Info.ColorMode, colorID);      
+                    }
+                    uint16_t len = (ScreenType::Info.ColorMode == SRL::CRAM::TextureColorMode::Paletted16) ? 16 : 256;
+                    ScreenType::TilePalette.Load((Types::HighColor*)tilemap.GetPalData(), len);
+                }*/
+                
+                
+                
+                
+                
+                //int colorID = 0;
                 if (info.Palette!=nullptr && info.Palette->Count!=0)
                 {
                     if(ScreenType::TilePalette.GetData()==nullptr)
                     {  
-                        if(colorID = SRL::CRAM::GetFreeBank(info.ColorMode) < 0)
+                        int colorID = SRL::CRAM::GetFreeBank(info.ColorMode);
+                        if(colorID < 0)
                         {
                             SRL::Debug::Assert("Palette Load Failed- no CRAM Palettes available");
                             return;
                         }
-                        else
-                        {
-                            SRL::CRAM::SetBankUsedState(colorID, info.ColorMode, true);
-                            ScreenType::TilePalette = SRL::CRAM::Palette(info.ColorMode, colorID);      
-                        }
+                        SRL::CRAM::SetBankUsedState(colorID, info.ColorMode, true);
+                        ScreenType::TilePalette = SRL::CRAM::Palette(info.ColorMode, colorID);  
+                        ScreenType::TilePalette.Load(info.Palette->Colors, info.Palette->Count);    
                     }
-                    ScreenType::TilePalette.Load(info.Palette->Colors, info.Palette->Count);
+                    ScreenType::TilePalette.Load(info.Palette->Colors, info.Palette->Count);    
                 }
                 ScreenType::Init(info);
             } 
@@ -1421,7 +1443,7 @@ namespace SRL
          */
         inline static  void SetBackColor(const Types::HighColor& color)
         {
-            slBack1ColSet((void*)(VDP2_VRAM_A1 + 0x1fffe), (uint16_t)color);
+            slBack1ColSet((void*)(VDP2_VRAM_B1 + 0x1fee0), (uint16_t)color);
         }
 
         /** @brief Set color for print
@@ -1470,7 +1492,7 @@ namespace SRL
             SRL::VDP2::NBG3::ScrollEnable();
             SRL::VDP2::NBG0::ScrollDisable(); // We don't want this on by default anymore
             // Fix param table at top of VRAM outside range of allocator - now user calls to slPerspective will always update here:
-            slRparaInitSet((ROTSCROLL*)(VDP2_VRAM_A0 + 0x1ff00));
+            slRparaInitSet((ROTSCROLL*)(VDP2_VRAM_B1 + 0x1ff00));
         }
 
         /** @brief Data structure of a VDP2 color offset to be set in Offset A or Offset B
