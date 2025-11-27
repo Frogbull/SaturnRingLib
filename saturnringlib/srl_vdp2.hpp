@@ -8,6 +8,11 @@
 #include "srl_cd.hpp"
 #include "srl_tilemap_interfaces.hpp"
 
+/*I'm running into an issue with getting Bitmaps working for RBG0. Does anyone know 
+what SGL function if any is supposed to set the RAM contol register associated with reserving
+a bank in bitmaps case? None of the bitmap functions appear to set the bits. I can get it to work by 
+manually setting the bits in VDP2_RAMCTL system variable...
+ */
 namespace SRL
 {
     /** @brief VDP2 control
@@ -234,7 +239,7 @@ namespace SRL
             * @param screen The screen identifier
             * @param size optional pointer to pass the resulting allocation size back from function
             * @return Pointer to the allocated memory
-            * @note The maximum allocation size supported by this function is 0x40000 bytes (half of VRAM).
+            * @note The maximum allocation size supported is 0x40000 bytes (2 banks of VRAM).
             */
             inline static void* AutoAllocateBmp(Bitmap::BitmapInfo& info, int16_t screen, int* size = nullptr)
             {
@@ -254,11 +259,14 @@ namespace SRL
                     sz>=1;
                     numCycles>>=1;
                 }
+
                 else if(info.ColorMode==CRAM::TextureColorMode::RGB555)
                 {
                     sz<<=1;
                     numCycles<<=1;
                 }
+
+                if (screen == scnRBG0) numCycles = 8;
 
                 if(sz>262144) //case: bmp is too large for allocator at this color depth
                 {
@@ -284,10 +292,11 @@ namespace SRL
                     }
                 }
                 else//case: bmp requires 1 or 1/2 VRAM bank
-                { 
-                    alloc = VRAM::Allocate(sz, 32, VramBank::B0, numCycles);
-                    if (alloc == nullptr) alloc = VRAM::Allocate(sz, 32, VramBank::A1,numCycles);
-                    if (alloc == nullptr) alloc = VRAM::Allocate(sz, 32, VramBank::A0, numCycles);
+                {   
+                    
+                    alloc = VRAM::Allocate(sz, 32, VramBank::A0, numCycles);
+                    if (alloc == nullptr) alloc = VRAM::Allocate(sz, 32, VramBank::B0,numCycles);
+                    if (alloc == nullptr) alloc = VRAM::Allocate(sz, 32, VramBank::A1, numCycles);
                     if (alloc == nullptr) alloc = VRAM::Allocate(sz, 32, VramBank::B1, numCycles);
                     if (alloc == nullptr) SRL::Debug::Assert("Bmp Allocation failed: insufficient VRAM");
                 }
@@ -815,19 +824,19 @@ namespace SRL
             *  | 8bpp    | 512x512 or 1024x256| 1 or 2 banks      |
             *  | 16bpp   | 512x256            | Always 2 banks    |
             *
+            *  @param bmp Pointer to the bitmap interface to load from.
             *  @note If source Bitmap size is not equal to one of the container sizes, excess VRAM will be wasted.
             *  To conserve VRAM, consider converting to tilemap format with Bmp2Tile for smaller images when possible.
             *  @note RBG0 only supports the 512x256 and 512x512 containers. Because RBG0 does not need to reserve an extra bank
             *  for map data in this mode, this is one case where using the bitmap format may save VRAM resources over tilemaps.
-            *  @param bmp Pointer to the bitmap interface to load from.
             */
-            static void LoadBitmap(SRL::Bitmap::IBitmap* bmp)
+            inline static void LoadBitmap(SRL::Bitmap::IBitmap* bmp)
             {
-                SRL::Bitmap::BitmapInfo info = bmp->GetInfo();
+                SRL::Bitmap::BitmapInfo myInfo = bmp->GetInfo();
                 int autoSize = 0;
                 if ((uint32_t)ScreenType::CellAddress < VDP2_VRAM_A0)
                 {
-                    ScreenType::CellAddress =  VRAM::AutoAllocateBmp(info, ScreenType::ScreenID,&autoSize);
+                    ScreenType::CellAddress =  VRAM::AutoAllocateBmp(myInfo, ScreenType::ScreenID,&autoSize);
                     if(ScreenType::CellAddress) ScreenType::CellAllocSize = autoSize;
                 }
                 if(ScreenType::CellAddress==nullptr)
@@ -836,52 +845,53 @@ namespace SRL
                     return;
                 }
                 VRAM::Blank(ScreenType::CellAddress,ScreenType::CellAllocSize);
-                Bmp2VRAM(bmp->GetData(),ScreenType::CellAddress,info);
-                /*                
-                int colorID = 0;
-                if (ScreenType::Info.ColorMode != SRL::CRAM::TextureColorMode::RGB555)
-                {
-                    if(ScreenType::TilePalette.GetData()==nullptr)
-                    {
-                        if ((colorID = SRL::CRAM::GetFreeBank(ScreenType::Info.ColorMode)) < 0)
-                        {
-                            SRL::Debug::Assert("Tilemap Palette Load Failed- no CRAM Palettes available");
-                            return;
-                        }
-
-                        SRL::CRAM::SetBankUsedState(colorID, ScreenType::Info.ColorMode, true);
-                        ScreenType::TilePalette = SRL::CRAM::Palette(ScreenType::Info.ColorMode, colorID);      
-                    }
-                    uint16_t len = (ScreenType::Info.ColorMode == SRL::CRAM::TextureColorMode::Paletted16) ? 16 : 256;
-                    ScreenType::TilePalette.Load((Types::HighColor*)tilemap.GetPalData(), len);
-                }*/
+                Bmp2VRAM(bmp->GetData(),ScreenType::CellAddress,myInfo);
                 
-                
-                
-                
-                
-                //int colorID = 0;
-                if (info.Palette!=nullptr && info.Palette->Count!=0)
+                int colorID = -1;
+                if (myInfo.Palette!=nullptr && myInfo.Palette->Count!=0)
                 {
                     if(ScreenType::TilePalette.GetData()==nullptr)
                     {  
-                        int colorID = SRL::CRAM::GetFreeBank(info.ColorMode);
+                        SRL::CRAM::TextureColorMode col = myInfo.ColorMode;
+
+                        //ensure 64 and 128 color pallets are converted to 256
+                        if(col==SRL::CRAM::TextureColorMode::Paletted128||col==SRL::CRAM::TextureColorMode::Paletted64)
+                        {
+                            col = SRL::CRAM::TextureColorMode::Paletted256;
+                        }
+
+                        //handle 16 color pallet mapping to the allowed banks
+                        if(GetSGLColorMode(col) == 0) 
+                        {
+                            SRL::Debug::Print(0,20,"4bpp");
+                            for(int i = 0;i<8; ++i) 
+                            {
+                                if(!SRL::CRAM::GetBankUsedState(i<<4, col))
+                                {
+                                    colorID = i<<4;
+                                    break;
+                                }
+                            }
+                        }
+                        else colorID = SRL::CRAM::GetFreeBank(col);
+
                         if(colorID < 0)
                         {
                             SRL::Debug::Assert("Palette Load Failed- no CRAM Palettes available");
                             return;
                         }
-                        SRL::CRAM::SetBankUsedState(colorID, info.ColorMode, true);
-                        ScreenType::TilePalette = SRL::CRAM::Palette(info.ColorMode, colorID);  
-                        ScreenType::TilePalette.Load(info.Palette->Colors, info.Palette->Count);    
-                    }
-                    ScreenType::TilePalette.Load(info.Palette->Colors, info.Palette->Count);    
+                        SRL::CRAM::SetBankUsedState(colorID, col, true);
+                        ScreenType::TilePalette = SRL::CRAM::Palette(col, colorID);  
+                        SRL::Debug::Print(0,21,"Pal: %d",(int)ScreenType::TilePalette.GetData()-VDP2_COLRAM);
+                        ScreenType::TilePalette.Load(myInfo.Palette->Colors, myInfo.Palette->Count);    
+                    }   
+                    ScreenType::TilePalette.Load(myInfo.Palette->Colors, myInfo.Palette->Count);    
                 }
-                ScreenType::Init(info);
+                ScreenType::Init(myInfo);
             } 
 
             /** @brief Copies Bmp data to VRAM
-            * @param BmpData Cell Data to copy.
+            * @param BmpData Data to copy.
             * @param BmpAdr VRAM address to copy to.
             * @param info info about bmp 
             * @note When the source image does not completely fill the container the
@@ -905,14 +915,13 @@ namespace SRL
                     dataWidth>>=1;
                     containerWidth>>=1;
                 }
-                int i;
-                for(i = 0; i<info.Height;++i)
+                
+                for(int i = 0; i<info.Height;++i)
                 {
                    slDMACopy(data,vram,dataWidth);
                    vram+=containerWidth;
                    data+=dataWidth;
-                }  
-                //SRL::Debug::Print(2,23,"Lines: %d",i);          
+                }          
             }
         };
 
@@ -949,7 +958,11 @@ namespace SRL
                 uint16_t sglFlag = info.Height<=256? 0x2 : 0x6;
                 sglFlag |= info.Width<= 512 ?  0 : 1<<3; 
                 slBitMapNbg0(GetSGLColorMode(info.ColorMode), sglFlag, NBG0::CellAddress);  
-                slBMPaletteNbg0(NBG0::TilePalette.GetId());
+                if(info.ColorMode==SRL::CRAM::TextureColorMode::Paletted16)
+                {
+                    slBMPaletteNbg0(NBG0::TilePalette.GetId()>>4);
+                }
+                else slBMPaletteNbg0(NBG0::TilePalette.GetId());
             }
 
 
@@ -1006,7 +1019,11 @@ namespace SRL
                 uint16_t sglFlag = info.Height<=256? 0x2 : 0x6;
                 sglFlag |= info.Width<= 512 ?  0 : 1<<3; 
                 slBitMapNbg1(GetSGLColorMode(info.ColorMode), sglFlag, NBG1::CellAddress);  
-                slBMPaletteNbg1(NBG1::TilePalette.GetId());
+                if(info.ColorMode==SRL::CRAM::TextureColorMode::Paletted16)
+                {
+                    slBMPaletteNbg1(NBG1::TilePalette.GetId()>>4);
+                }
+                else slBMPaletteNbg1(NBG1::TilePalette.GetId());
             }
 
             /** @brief Set the 2x2 grid of planes for the layer
@@ -1144,16 +1161,30 @@ namespace SRL
              */
             inline static void Init(SRL::Tilemap::TilemapInfo& info)
             {
-                //slRparaInitSet((ROTSCROLL*)(VDP2_VRAM_B1 + 0x1ff00));
                 slRparaMode(RA);
                 slOverRA(0);
                 slCharRbg0(info.SGLColorMode(), info.CharSize);
-                slPageRbg0(CellAddress, (void*)RBG0::TilePalette.GetData(), info.MapMode);
+                slPageRbg0(RBG0::CellAddress, (void*)RBG0::TilePalette.GetData(), info.MapMode);
                 slPlaneRA(info.PlaneSize);
-                sl1MapRA(MapAddress);
-                slPopMatrix();
+                sl1MapRA(RBG0::MapAddress);
             }
-
+            /** @brief Initializes the ScrollScreen's bitmap specifications
+             * @param info bitmap info
+             */
+            static void Init(SRL::Bitmap::BitmapInfo& info)
+            {
+                slRparaMode(RA);
+                slOverRA(0);
+                uint16_t sglFlag = info.Height<=256? 0x2 : 0x6;
+                sglFlag |= info.Width<= 512 ?  0 : 1<<3; 
+                slPageRbg0(RBG0::CellAddress, (void*)RBG0::TilePalette.GetData(), RBG0::Info.MapMode);
+                slBitMapRbg0(GetSGLColorMode(info.ColorMode), sglFlag, RBG0::CellAddress);  
+                if(info.ColorMode==SRL::CRAM::TextureColorMode::Paletted16)
+                {
+                    slBMPaletteRbg0(RBG0::TilePalette.GetId()>>4);
+                }
+                else slBMPaletteRbg0(RBG0::TilePalette.GetId());
+            }
             /** @brief Select what type of rotation to use for the rotating scroll (Call before Loading RBG0)
              * @param mode The RotationMode to use for this scroll
              * @param vblank Chose to update VRAM at VBLANK to reduce amount of coefficient
@@ -1233,7 +1264,7 @@ namespace SRL
             }
             
              /** @brief Sets the plane of Tilemap Data to be displayed with 16 planes
-             * @param layout 4x4 array of uint8_t indecies representing the index of each plane in the map layout
+             * @param layout 4x4 array of uint8_t indices representing the index of each plane in the map layout
              * @note Unlike NBG scrolls RBG0 only loads with the default tiling of 1 plane. Use this
              * function after loading to set the arrangement of multi plane tilemaps within a 4x4 grid.
              * @note No check is performed to ensure the indecies entered are within the bounds of
@@ -1383,7 +1414,7 @@ namespace SRL
 
             if (VDP2::NBG0::TilePalette.GetData())
             {
-                SRL::CRAM::SetBankUsedState(VDP2::NBG0::TilePalette.GetId(), VDP2::NBG0::Info.ColorMode, false);
+                SRL::CRAM::SetBankUsedState(VDP2::NBG0::TilePalette.GetId(),  VDP2::RBG0::TilePalette.GetMode(), false);
                 VDP2::NBG0::TilePalette = SRL::CRAM::Palette();
             }
 
@@ -1393,7 +1424,7 @@ namespace SRL
 
             if (VDP2::NBG1::TilePalette.GetData())
             {
-                SRL::CRAM::SetBankUsedState(VDP2::NBG1::TilePalette.GetId(), VDP2::NBG1::Info.ColorMode, false);
+                SRL::CRAM::SetBankUsedState(VDP2::NBG1::TilePalette.GetId(),  VDP2::RBG0::TilePalette.GetMode(), false);
                 VDP2::NBG1::TilePalette = SRL::CRAM::Palette();
             }
 
@@ -1402,7 +1433,7 @@ namespace SRL
 
             if (VDP2::NBG2::TilePalette.GetData())
             {
-                SRL::CRAM::SetBankUsedState(VDP2::NBG2::TilePalette.GetId(), VDP2::NBG2::Info.ColorMode, false);
+                SRL::CRAM::SetBankUsedState(VDP2::NBG2::TilePalette.GetId(),  VDP2::RBG0::TilePalette.GetMode(), false);
                 VDP2::NBG2::TilePalette = SRL::CRAM::Palette();
             }
 
@@ -1411,7 +1442,7 @@ namespace SRL
 
             if (VDP2::NBG3::TilePalette.GetData())
             {
-                SRL::CRAM::SetBankUsedState(VDP2::NBG3::TilePalette.GetId(), VDP2::NBG3::Info.ColorMode, false);
+                SRL::CRAM::SetBankUsedState(VDP2::NBG3::TilePalette.GetId(),  VDP2::RBG0::TilePalette.GetMode(), false);
                 VDP2::NBG3::TilePalette = SRL::CRAM::Palette();
             }
 
@@ -1421,7 +1452,7 @@ namespace SRL
 
             if (VDP2::RBG0::TilePalette.GetData())
             {
-                SRL::CRAM::SetBankUsedState(VDP2::RBG0::TilePalette.GetId(), VDP2::RBG0::Info.ColorMode, false);
+                SRL::CRAM::SetBankUsedState(VDP2::RBG0::TilePalette.GetId(), VDP2::RBG0::TilePalette.GetMode(), false);
                 VDP2::RBG0::TilePalette = SRL::CRAM::Palette();
             }
 
