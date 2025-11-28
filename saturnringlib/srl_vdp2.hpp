@@ -307,8 +307,8 @@ namespace SRL
             }
 
             /** @brief Overwrites a specified VRAM region with 0 data.
-             *  @param Address the vram address of the area to blank.
-             *  @param Size of area to overwrite (in bytes).
+             *  @param Address The vram address of the area to blank.
+             *  @param Size The size of area to overwrite in bytes.
              */
             static void Blank(void* address, uint32_t size)
             {
@@ -624,8 +624,11 @@ namespace SRL
             /** @brief Manually set the Plane layout of a Scroll Screen
              * @details This function manually sets the 4 planes comprising a NBG scroll screen
              * in cases when the default plane tiling pattern is not desired.
+             *      The Planes will display in a 2x2 grid as:  
+             *          |a|b|
+             *          |c|d|
              * @param a,b,c,d the plane indicies of the 4 planes that will display in the normal scroll
-             * @note RBG0 does not currently support multi plane patterns, so only plane [a] will be used
+             * @note RBG0 provides a separate function to handle 16 planes, See RBG0 interface for details.   
              */
             inline static void SetMapLayout(uint8_t a, uint8_t b, uint8_t c, uint8_t d)
             {
@@ -854,13 +857,13 @@ namespace SRL
                     {  
                         SRL::CRAM::TextureColorMode col = myInfo.ColorMode;
 
-                        //ensure 64 and 128 color pallets are converted to 256
+                        //ensure 64 and 128 color palettes are converted to 256
                         if(col==SRL::CRAM::TextureColorMode::Paletted128||col==SRL::CRAM::TextureColorMode::Paletted64)
                         {
                             col = SRL::CRAM::TextureColorMode::Paletted256;
                         }
 
-                        //handle 16 color pallet mapping to the allowed banks
+                        //handle 16 color palette mapping to the allowed banks
                         if(GetSGLColorMode(col) == 0) 
                         {
                             SRL::Debug::Print(0,20,"4bpp");
