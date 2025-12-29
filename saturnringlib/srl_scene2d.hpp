@@ -6,6 +6,7 @@
 namespace SRL
 {
     /** @brief Rendering of VDP1 sprites and shapes
+     * @note Z/depth does not cause perspective calculation, it is used only for sorting
      */
     class Scene2D
     {
