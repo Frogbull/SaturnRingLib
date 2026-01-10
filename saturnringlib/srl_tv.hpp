@@ -20,15 +20,15 @@ namespace SRL
              * @param width Area width
              * @param height Area height
              */
-            Resolution(const uint16_t width, const uint16_t height) : Width(width), Height(height) {}
+            Resolution(const int16_t width, const int16_t height) : Width(width), Height(height) {}
 
             /** @brief Area width
              */
-            uint16_t Width;
+            int16_t Width;
 
             /** @brief Area height
              */
-            uint16_t Height;
+            int16_t Height;
         };
     }
 
@@ -36,29 +36,8 @@ namespace SRL
      */
     class TV final
     {
-        /** @brief Make class purely static
-         */
-        TV() = delete;
-
-        /** @brief Make class purely static
-         */
-        ~TV() = delete;
     public:
-
-        /** @brief Turn on TV display
-         */
-        static void TVOn()
-        {
-            slTVOn();
-        }
-
-        /** @brief Turn off TV display
-         */
-        static void TVOff()
-        {
-            slTVOff();
-        }
-
+    
         /** @brief Available TV resolutions
          */
         enum class Resolutions
@@ -86,60 +65,144 @@ namespace SRL
             Interlaced704x480 = 29
         };
 
-#ifdef SRL_MODE_PAL
-        /** @brief Screen width
-         */
-        inline static const uint16_t Width = 320;
+    private:
 
-        /** @brief Screen height
+        /** @brief Befriend core
          */
-        inline static const uint16_t Height = 256;
+        friend SRL::Core;
 
-        /** @brief Screen resolution mode
+        /** @brief Size of the screen
          */
-        inline static const TV::Resolutions Resolution = TV::Resolutions::Normal320x256;
-#elif SRL_MODE_NTSC
-    #ifdef SRL_HIGH_RES
-        /** @brief Screen width
-         */
-        inline static const uint16_t Width = 704;
+        inline static SRL::Types::Resolution ScreenSize;
 
-        /** @brief Screen height
+        /** @brief Contains the current resolution setting
          */
-        inline static const uint16_t Height = 480;
+        inline static Resolutions CurrentResolution;
 
-        /** @brief Screen resolution mode
+        /** @brief Make class purely static
          */
-        inline static const TV::Resolutions Resolution = TV::Resolutions::Interlaced704x480;
-    #else
-        /** @brief Screen width
-         */
-        inline static const uint16_t Width = 320;
+        TV() = delete;
 
-        /** @brief Screen height
+        /** @brief Make class purely static
          */
-        inline static const uint16_t Height = 240;
+        ~TV() = delete;
 
-        /** @brief Screen resolution mode
+        /** @brief Set the screen resolution state
+         * @param resolution Current resolution
          */
-        inline static const TV::Resolutions Resolution = TV::Resolutions::Normal320x240;
-    #endif
-#elif DOXYGEN
-        /** @brief Screen width
-         * @note Differs based on makefile setting SRL_MODE = (PAL | NTSC) and whether SRL_HIGH_RES is set
-         */
-        inline static const uint16_t Width;
+        static void SetScreenSize(const Resolutions resolution)
+        {
+            TV::CurrentResolution = resolution;
 
-        /** @brief Screen height
-         * @note Differs based on makefile setting SRL_MODE = (PAL | NTSC) and whether SRL_HIGH_RES is set
-         */
-        inline static const uint16_t Height;
+            switch (resolution)
+            {
+            // Normal resolutions
+            case Resolutions::Normal320x224:
+                TV::ScreenSize = SRL::Types::Resolution(320, 224);
+                break;
+            
+            case Resolutions::Normal320x240:
+                TV::ScreenSize = SRL::Types::Resolution(320, 240);
+                break;
 
-        /** @brief Screen resolution mode
-         * @note Differs based on makefile setting SRL_MODE = (PAL | NTSC) and whether SRL_HIGH_RES is set
-         */
-        inline static const TV::Resolutions Resolution;
-#endif
+            case Resolutions::Normal320x256:
+                TV::ScreenSize = SRL::Types::Resolution(320, 256);
+                break;
 
+            case Resolutions::Normal352x224:
+                TV::ScreenSize = SRL::Types::Resolution(352, 224);
+                break;
+
+            case Resolutions::Normal352x240:
+                TV::ScreenSize = SRL::Types::Resolution(352, 240);
+                break;
+
+            case Resolutions::Normal352x256:
+                TV::ScreenSize = SRL::Types::Resolution(352, 256);
+                break;
+
+            case Resolutions::Normal352x448:
+                TV::ScreenSize = SRL::Types::Resolution(352, 448);
+                break;
+            case Resolutions::Normal352x480:
+                TV::ScreenSize = SRL::Types::Resolution(352, 480);
+                break;
+
+            case Resolutions::Normal320x448i:
+                TV::ScreenSize = SRL::Types::Resolution(320, 448);
+                break;
+                
+            case Resolutions::Normal320x480i:
+                TV::ScreenSize = SRL::Types::Resolution(320, 480);
+                break;
+
+            // Interlaced resolutions
+            case Resolutions::Interlaced640x224:
+                TV::ScreenSize = SRL::Types::Resolution(640, 224);
+                break;
+
+            case Resolutions::Interlaced640x240:
+                TV::ScreenSize = SRL::Types::Resolution(640, 240);
+                break;
+
+            case Resolutions::Interlaced704x224:
+                TV::ScreenSize = SRL::Types::Resolution(704, 224);
+                break;
+
+            case Resolutions::Interlaced704x240:
+                TV::ScreenSize = SRL::Types::Resolution(704, 240);
+                break;
+
+            case Resolutions::Interlaced640x448i:
+                TV::ScreenSize = SRL::Types::Resolution(640, 448);
+                break;
+
+            case Resolutions::Interlaced640x480i:
+                TV::ScreenSize = SRL::Types::Resolution(640, 480);
+                break;
+
+            case Resolutions::Interlaced704x448:
+                TV::ScreenSize = SRL::Types::Resolution(704, 448);
+                break;
+
+            case Resolutions::Interlaced704x480:
+                TV::ScreenSize = SRL::Types::Resolution(704, 480);
+                break;
+
+            default:
+                break;
+            }
+
+            TV::Width = TV::ScreenSize.Width;
+            TV::Height = TV::ScreenSize.Height;
+        }
+
+    public:
+
+        /** @brief Turn on TV display
+         */
+        static void TVOn()
+        {
+            slTVOn();
+        }
+
+        /** @brief Turn off TV display
+         */
+        static void TVOff()
+        {
+            slTVOff();
+        }
+
+        /** @brief Read only screen width
+         */
+        inline static int16_t Width;
+
+        /** @brief Read only screen height
+         */
+        inline static int16_t Height;
+
+        /** @brief Read only screen resolution mode
+         */
+        inline static TV::Resolutions Resolution;
     };
 };
