@@ -42,27 +42,37 @@ namespace SRL
          */
         enum class Resolutions
         {
-            Normal320x224 = TV_320x224,
-            Normal320x240 = TV_320x240,
-            Normal320x256 = TV_320x256,
-            Normal352x224 = TV_352x224,
-            Normal352x240 = TV_352x240,
-            Normal352x256 = TV_352x256,
+            Normal320x224 = 0,
+            Normal320x240 = 1,
+            Normal320x256 = 2,
 
-            Interlaced640x224 = TV_640x224,
-            Interlaced640x240 = TV_640x240,
-            Interlaced704x224 = TV_704x224,
-            Interlaced704x240 = TV_704x240,
+            Normal352x224 = 4,
+            Normal352x240 = 5,
+            Normal352x256 = 6,
 
-            Normal320x448i = 16,
-            Normal320x480i = 17,
-            Normal352x448 = 20,
-            Normal352x480 = 21,
+            Normal640x224 = 8,
+            Normal640x240 = 9,
+            Normal640x256 = 10,
 
-            Interlaced640x448i = 24,
-            Interlaced640x480i = 25,
+            Normal704x224 = 12,
+            Normal704x240 = 13,
+            Normal704x256 = 14,
+
+            Interlaced320x448 = 16,
+            Interlaced320x480 = 17,
+            Interlaced320x512 = 18,
+
+            Interlaced352x448 = 20,
+            Interlaced352x480 = 21,
+            Interlaced352x512 = 22,
+
+            Interlaced640x448 = 24,
+            Interlaced640x480 = 25,
+            Interlaced640x512 = 26,
+
             Interlaced704x448 = 28,
-            Interlaced704x480 = 29
+            Interlaced704x480 = 29,
+            Interlaced704x512 = 30,
         };
 
     private:
@@ -70,14 +80,6 @@ namespace SRL
         /** @brief Befriend core
          */
         friend SRL::Core;
-
-        /** @brief Size of the screen
-         */
-        inline static SRL::Types::Resolution ScreenSize;
-
-        /** @brief Contains the current resolution setting
-         */
-        inline static Resolutions CurrentResolution;
 
         /** @brief Make class purely static
          */
@@ -92,89 +94,99 @@ namespace SRL
          */
         static void SetScreenSize(const Resolutions resolution)
         {
-            TV::CurrentResolution = resolution;
+            TV::Resolution = resolution;
 
+            // Set Width
             switch (resolution)
             {
-            // Normal resolutions
             case Resolutions::Normal320x224:
-                TV::ScreenSize = SRL::Types::Resolution(320, 224);
+            case Resolutions::Normal320x240:
+            case Resolutions::Normal320x256:
+            case Resolutions::Interlaced320x448:
+            case Resolutions::Interlaced320x480:
+            case Resolutions::Interlaced320x512:
+                TV::Width = 320;
                 break;
             
-            case Resolutions::Normal320x240:
-                TV::ScreenSize = SRL::Types::Resolution(320, 240);
-                break;
-
-            case Resolutions::Normal320x256:
-                TV::ScreenSize = SRL::Types::Resolution(320, 256);
-                break;
-
             case Resolutions::Normal352x224:
-                TV::ScreenSize = SRL::Types::Resolution(352, 224);
-                break;
-
             case Resolutions::Normal352x240:
-                TV::ScreenSize = SRL::Types::Resolution(352, 240);
-                break;
-
             case Resolutions::Normal352x256:
-                TV::ScreenSize = SRL::Types::Resolution(352, 256);
+            case Resolutions::Interlaced352x448:
+            case Resolutions::Interlaced352x480:
+            case Resolutions::Interlaced352x512:
+                TV::Width = 352;
                 break;
 
-            case Resolutions::Normal352x448:
-                TV::ScreenSize = SRL::Types::Resolution(352, 448);
-                break;
-            case Resolutions::Normal352x480:
-                TV::ScreenSize = SRL::Types::Resolution(352, 480);
-                break;
-
-            case Resolutions::Normal320x448i:
-                TV::ScreenSize = SRL::Types::Resolution(320, 448);
-                break;
-                
-            case Resolutions::Normal320x480i:
-                TV::ScreenSize = SRL::Types::Resolution(320, 480);
+            case Resolutions::Normal640x224:
+            case Resolutions::Normal640x240:
+            case Resolutions::Normal640x256:
+            case Resolutions::Interlaced640x448:
+            case Resolutions::Interlaced640x480:
+            case Resolutions::Interlaced640x512:
+                TV::Width = 640;
                 break;
 
-            // Interlaced resolutions
-            case Resolutions::Interlaced640x224:
-                TV::ScreenSize = SRL::Types::Resolution(640, 224);
-                break;
-
-            case Resolutions::Interlaced640x240:
-                TV::ScreenSize = SRL::Types::Resolution(640, 240);
-                break;
-
-            case Resolutions::Interlaced704x224:
-                TV::ScreenSize = SRL::Types::Resolution(704, 224);
-                break;
-
-            case Resolutions::Interlaced704x240:
-                TV::ScreenSize = SRL::Types::Resolution(704, 240);
-                break;
-
-            case Resolutions::Interlaced640x448i:
-                TV::ScreenSize = SRL::Types::Resolution(640, 448);
-                break;
-
-            case Resolutions::Interlaced640x480i:
-                TV::ScreenSize = SRL::Types::Resolution(640, 480);
-                break;
-
+            case Resolutions::Normal704x224:
+            case Resolutions::Normal704x240:
+            case Resolutions::Normal704x256:
             case Resolutions::Interlaced704x448:
-                TV::ScreenSize = SRL::Types::Resolution(704, 448);
-                break;
-
             case Resolutions::Interlaced704x480:
-                TV::ScreenSize = SRL::Types::Resolution(704, 480);
+            case Resolutions::Interlaced704x512:
+                TV::Width = 704;
                 break;
 
             default:
                 break;
             }
+            
+            // Set Height
+            switch (resolution)
+            {
+            case Resolutions::Normal320x224:
+            case Resolutions::Normal352x224:
+            case Resolutions::Normal640x224:
+            case Resolutions::Normal704x224:
+                TV::Height = 224;
+                break;
 
-            TV::Width = TV::ScreenSize.Width;
-            TV::Height = TV::ScreenSize.Height;
+            case Resolutions::Normal320x240:
+            case Resolutions::Normal352x240:
+            case Resolutions::Normal640x240:
+            case Resolutions::Normal704x240:
+                TV::Height = 240;
+                break;
+
+            case Resolutions::Normal320x256:
+            case Resolutions::Normal352x256:
+            case Resolutions::Normal640x256:
+            case Resolutions::Normal704x256:
+                TV::Height = 256;
+                break;
+
+            case Resolutions::Interlaced320x448:
+            case Resolutions::Interlaced352x448:
+            case Resolutions::Interlaced640x448:
+            case Resolutions::Interlaced704x448:
+                TV::Height = 448;
+                break;
+
+            case Resolutions::Interlaced320x480:
+            case Resolutions::Interlaced352x480:
+            case Resolutions::Interlaced640x480:
+            case Resolutions::Interlaced704x480:
+                TV::Height = 480;
+                break;
+
+            case Resolutions::Interlaced320x512:
+            case Resolutions::Interlaced352x512:
+            case Resolutions::Interlaced640x512:
+            case Resolutions::Interlaced704x512:
+                TV::Height = 512;
+                break;
+            
+            default:
+                break;
+            }
         }
 
     public:
