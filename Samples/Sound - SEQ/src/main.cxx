@@ -1,23 +1,13 @@
-#include "SDDRVS.DAT"
-#define SoundMem 0x25a0b000
+#define SRL_ENABLE_AUDIO_SEQ_SUPPORT 1
+#define SoundMem 0x25a0b000 // The playback data is stored starting from address 0xB000 in the MC68000 memory area (0x25A0B000 in the program) https://antime.kapsi.fi/sega/files/ST-237-R1-051795.pdf
 #include <srl.hpp>
 
 // SEQ sample (Sega MIDI-style music playback) for SRL
 // Heavely inspired by the Jo Engine sample made by jfsantos (João Felipe Santos)
 // https://github.com/jfsantos/mid2seq
 
-uint8_t mechs_map[] = {
-    0x30,0x00,0xC0,0x00,0x80,0x01,0x00,0x40,0x20,0x01,0xC0,0x40,0x80,0x00,
-    0x05,0x40,0x10,0x02,0x45,0x80,0x80,0x00,0x01,0x6E,0x00,0x02,0x46,0xEE,
-    0x80,0x00,0x88,0xEC,0x11,0x02,0xCF,0xDC,0x80,0x00,0x53,0xA0,0x01,0x03,
-    0x23,0x7C,0x80,0x03,0x34,0x84,0x12,0x06,0x55,0x54,0x80,0x00,0x28,0x5A,
-    0x02,0x06,0x7D,0xAE,0x80,0x01,0x82,0x52,0xFF,0xFF
-};
-
-void Initialize_SoundSystem_SEQ_SaturnMIDI(void)
+void Load_SEQ_SaturnMIDI(void)
 {
-    slInitSound(sddrvstsk, sizeof(sddrvstsk), (uint8_t *)mechs_map, sizeof(mechs_map) );
-
     SRL::Cd::File seqFILE("BGM01.SEQ");
     SRL::Cd::File tonFILE("BGM01.TON");
 
@@ -45,20 +35,29 @@ int main()
     SRL::Core::Initialize(SRL::Types::HighColor::Colors::Black);
 
     // Load and initialize a Saturn SEQ music track (Sega MIDI-style music playback)
-    Initialize_SoundSystem_SEQ_SaturnMIDI();
+    Load_SEQ_SaturnMIDI();
 
     // Initialize gamepad
     SRL::Input::Digital pad(0);
 
+    // Load PCM sound to test if PCM could be played while SEQ music is also played
+    SRL::Cd::File file("GUN.PCM");
+    SRL::Sound::Pcm::RawPcm gun(&file, SRL::Sound::Pcm::PcmChannels::Mono, SRL::Sound::Pcm::Pcm8Bit, 15360);
+
     bool seqPlay = true;
 
-    // Volume (0 = 0% | 127 = 100%)
-    uint8_t seqVolume = 127;
+    uint16_t seqSongIndex = (1 << 8) + 0; // + 0 <<< For 1st Song Index
 
-    // Auto-Play the SEQ music track
-    slBGMOn((1 << 8) + 0, 0, seqVolume, 0);
+    uint8_t seqPriority = 0; // Priority (range only from 0 to 31. The larger the value, the higher the priority)
 
-    // Tempo (a value ranging from -32768 to 32767 for the parameter "Tempo")
+    uint8_t seqVolume = 127; // Volume (range only from 0 to 127. 0 = 0% | 127 = 100%)
+
+    uint8_t seqRate = 0; // Rate (range from 0 to 255)
+
+    // slBGMOn(SongIndex, Priority, Volume, Rate) | Auto-Play the SEQ music track
+    slBGMOn(seqSongIndex, seqPriority, seqVolume, seqRate);
+
+    // Tempo (a value ranging from -32768 to 32767 for the parameter Tempo. 0 = Normal Tempo)
     int16_t musicTempo = 0;
     slBGMTempo(musicTempo);
 
@@ -89,7 +88,7 @@ int main()
         SRL::Debug::Print(1,9, "Press Left/Right to change the Tempo");
         if (pad.WasPressed(SRL::Input::Digital::Button::Left))
         {
-            if (musicTempo > -32768+16)
+            if (musicTempo > INT16_MIN+16)
             {
                 musicTempo -= 16;
                 slBGMTempo(musicTempo);
@@ -97,7 +96,7 @@ int main()
         }
         else if (pad.WasPressed(SRL::Input::Digital::Button::Right))
         {
-            if (musicTempo < 32767-16)
+            if (musicTempo < INT16_MAX-16)
             {
                 musicTempo += 16;
                 slBGMTempo(musicTempo);
@@ -129,6 +128,13 @@ int main()
         else
         {
             SRL::Debug::Print(3,14, "No SEQ Music...     ");
+        }
+
+
+        SRL::Debug::Print(1,17, "Press A to Play PCM Gun Shot");
+        if (pad.WasPressed(SRL::Input::Digital::Button::A))
+        {
+            gun.PlayOnChannel(0);
         }
 
         SRL::Core::Synchronize();
