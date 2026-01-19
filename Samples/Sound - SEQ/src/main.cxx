@@ -6,7 +6,7 @@
 // Heavely inspired by the Jo Engine sample made by jfsantos (João Felipe Santos)
 // https://github.com/jfsantos/mid2seq
 
-void Load_SEQ_SaturnMIDI(void)
+void LoadSEQandTON(void)
 {
     SRL::Cd::File seqFILE("BGM01.SEQ");
     SRL::Cd::File tonFILE("BGM01.TON");
@@ -35,7 +35,7 @@ int main()
     SRL::Core::Initialize(SRL::Types::HighColor::Colors::Black);
 
     // Load and initialize a Saturn SEQ music track (Sega MIDI-style music playback)
-    Load_SEQ_SaturnMIDI();
+    LoadSEQandTON();
 
     // Initialize gamepad
     SRL::Input::Digital pad(0);
@@ -129,7 +129,6 @@ int main()
         {
             SRL::Debug::Print(3,14, "No SEQ Music...     ");
         }
-
 
         SRL::Debug::Print(1,17, "Press A to Play PCM Gun Shot");
         if (pad.WasPressed(SRL::Input::Digital::Button::A))
