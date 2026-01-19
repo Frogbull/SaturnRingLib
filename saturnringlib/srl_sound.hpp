@@ -9,18 +9,9 @@ extern "C" {
     #include <sega_pcm.h>
 }
 
-#if SRL_ENABLE_AUDIO_SEQ_SUPPORT == 1
-    uint8_t audio_map_seq[] = {
-        0x30,0x00,0xC0,0x00,0x80,0x01,0x00,0x40,0x20,0x01,0xC0,0x40,0x80,0x00,
-        0x05,0x40,0x10,0x02,0x45,0x80,0x80,0x00,0x01,0x6E,0x00,0x02,0x46,0xEE,
-        0x80,0x00,0x88,0xEC,0x11,0x02,0xCF,0xDC,0x80,0x00,0x53,0xA0,0x01,0x03,
-        0x23,0x7C,0x80,0x03,0x34,0x84,0x12,0x06,0x55,0x54,0x80,0x00,0x28,0x5A,
-        0x02,0x06,0x7D,0xAE,0x80,0x01,0x82,0x52,0xFF,0xFF
-    };
-#endif
-
 /** @brief Sound handling
  */
+
 namespace SRL::Sound
 {
     /** @brief Sound hardware handling 
@@ -36,7 +27,12 @@ namespace SRL::Sound
             slSoundOffWait();
 
             Cd::File program("SDDRVS.TSK");
-            Cd::File areaMap("BOOTSND.MAP");
+
+            #if SRL_ENABLE_AUDIO_SEQ_SUPPORT == 1
+                Cd::File areaMap("CUSTOM.MAP");
+            #else
+                Cd::File areaMap("BOOTSND.MAP");
+            #endif
 
             if (program.Exists() && areaMap.Exists())
             {
@@ -55,13 +51,9 @@ namespace SRL::Sound
                 SND_INI_ARA_ADR(init) = (uint16_t*)areaMapBuffer;
                 SND_INI_ARA_SZ(init) = (uint16_t)areaMap.Size.Bytes;
                 SND_Init(&init);
-	            SND_ChgMap(0);
+                SND_ChgMap(0);
 
-                #if SRL_ENABLE_AUDIO_SEQ_SUPPORT == 1
-                    slInitSound(programBuffer, program.Size.Bytes, audio_map_seq, sizeof(audio_map_seq) );
-                #else
-                    slInitSound(programBuffer, program.Size.Bytes, areaMapBuffer, areaMap.Size.Bytes);
-                #endif
+                slInitSound(programBuffer, program.Size.Bytes, areaMapBuffer, areaMap.Size.Bytes);
 
                 *(volatile unsigned char *)(0x25a004e1) = 0x0;
                 CDC_CdInit(0x00, 0x00, 0x05, 0x0f);
@@ -109,38 +101,38 @@ namespace SRL::Sound
 
     public:
     
-		/** @brief Set CD playback volume
-		 *  @param left Left channel audio volume (7 is max)
-		 *  @param right Right channel audio volume (7 is max)
-		 */
-		constexpr static void SetVolume(const uint8_t left, const uint8_t right)
+        /** @brief Set CD playback volume
+         *  @param left Left channel audio volume (7 is max)
+         *  @param right Right channel audio volume (7 is max)
+         */
+        constexpr static void SetVolume(const uint8_t left, const uint8_t right)
         {
             SND_SetCdDaLev(left, right);
         }
 
-		/** @brief Set CD playback volume
-		 *  @param volume Audio volume (7 is max)
-		 */
-		constexpr static void SetVolume(const uint8_t volume)
+        /** @brief Set CD playback volume
+         *  @param volume Audio volume (7 is max)
+         */
+        constexpr static void SetVolume(const uint8_t volume)
         {
             Cdda::SetVolume(volume, volume);
         }
 
-		/** @brief Set CD playback stereo pan
-		 *  @param left Left channel volume (7 is max)
-		 *  @param right Right channel volume (7 is max)
-		 */
-		constexpr static void SetPan(const uint8_t left, const uint8_t right)
+        /** @brief Set CD playback stereo pan
+         *  @param left Left channel volume (7 is max)
+         *  @param right Right channel volume (7 is max)
+         */
+        constexpr static void SetPan(const uint8_t left, const uint8_t right)
         {
             SND_SetCdDaPan(left, right);
         }
 
-		/** @brief Play range of tracks
-		 *  @param fromTrack Starting track
-		 *  @param toTrack Ending track
-		 *  @param loop Whether to play the range of track again after it ends
-		 */
-		static void Play(const uint16_t fromTrack, const uint16_t toTrack, const bool loop)
+        /** @brief Play range of tracks
+         *  @param fromTrack Starting track
+         *  @param toTrack Ending track
+         *  @param loop Whether to play the range of track again after it ends
+         */
+        static void Play(const uint16_t fromTrack, const uint16_t toTrack, const bool loop)
         {
             Cdda::TargetTrack = toTrack;
             Cdda::LoopPlayback = loop;
@@ -164,14 +156,14 @@ namespace SRL::Sound
             CDC_CdPlay(&ply);
         }
 
-		/** @brief Play single CD track
-		 *  @param track Track number (see .cue after build for track numbers)
-		 *  @param loop Whether to loop track after it ends
-		 */
-		constexpr static void PlaySingle(const uint16_t track, const bool loop)
-		{
+        /** @brief Play single CD track
+         *  @param track Track number (see .cue after build for track numbers)
+         *  @param loop Whether to loop track after it ends
+         */
+        constexpr static void PlaySingle(const uint16_t track, const bool loop)
+        {
             Cdda::Play(track, track, loop);
-		}
+        }
 
         /** @brief Resume audio playback from where it left off
          */
@@ -213,9 +205,9 @@ namespace SRL::Sound
             CDC_CdPlay(&ply);
         }
 
-		/** @brief Stop or pause CD music playback
-		 */
-		static void StopPause()
+        /** @brief Stop or pause CD music playback
+         */
+        static void StopPause()
         {
             // Get current address
             CdcStat stat;
@@ -352,19 +344,19 @@ namespace SRL::Sound
         /** @brief Logarithmic table
          */
         static inline const int8_t LogTable[] = {
-        /* 0 */		0, 
-        /* 1 */		1, 
-        /* 2 */		2, 2, 
-        /* 4 */		3, 3, 3, 3, 
-        /* 8 */		4, 4, 4, 4, 4, 4, 4, 4, 
-        /* 16 */	5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 
-        /* 32 */	6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 
+        /* 0 */     0, 
+        /* 1 */     1, 
+        /* 2 */     2, 2, 
+        /* 4 */     3, 3, 3, 3, 
+        /* 8 */     4, 4, 4, 4, 4, 4, 4, 4, 
+        /* 16 */    5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 5, 
+        /* 32 */    6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 
                     6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 
-        /* 64 */	7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 
+        /* 64 */    7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 
                     7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 
                     7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 
                     7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 
-        /* 128 */	8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 
+        /* 128 */   8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 
                     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 
                     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 
                     8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 
@@ -375,10 +367,10 @@ namespace SRL::Sound
         };
 
         /* 1,3,4,5,10 bit mask */
-        #define PCM_MSK1(a)	((a)&0x0001)
-        #define PCM_MSK3(a)	((a)&0x0007)
-        #define PCM_MSK4(a)	((a)&0x000F)
-        #define PCM_MSK5(a)	((a)&0x001F)
+        #define PCM_MSK1(a) ((a)&0x0001)
+        #define PCM_MSK3(a) ((a)&0x0007)
+        #define PCM_MSK4(a) ((a)&0x000F)
+        #define PCM_MSK5(a) ((a)&0x001F)
         #define PCM_MSK10(a) ((a)&0x03FF)
 
         /** @brief SCSP basic frequency 44.1[kHz]
@@ -387,23 +379,23 @@ namespace SRL::Sound
 
         /** @brief Calculating the octave value
          */
-        #define PCM_CALC_OCT(samplingRate) 											\
+        #define PCM_CALC_OCT(samplingRate)                                          \
             ((int32_t)Pcm::LogTable[PCM_SCSP_FREQUENCY / ((samplingRate) + 1)])
 
         /** @brief Calculating shift reference frequency
          */
-        #define PCM_CALC_SHIFT_FREQ(oct)											\
+        #define PCM_CALC_SHIFT_FREQ(oct)                                            \
             (PCM_SCSP_FREQUENCY >> (oct))
 
         /** @brief FNS calculation
          */
-        #define PCM_CALC_FNS(samplingRate, shiftFreq)								\
+        #define PCM_CALC_FNS(samplingRate, shiftFreq)                               \
             ((((samplingRate) - (shiftFreq)) << 10) / (shiftFreq))
 
         /** @brief Pitch value
          */
-        #define PCM_SET_PITCH_WORD(oct, fns)										\
-		    ((uint16_t)((PCM_MSK4(-(oct)) << 11) | PCM_MSK10(fns)))
+        #define PCM_SET_PITCH_WORD(oct, fns)                                        \
+            ((uint16_t)((PCM_MSK4(-(oct)) << 11) | PCM_MSK10(fns)))
         
         /** @brief Available PCM channels
          */
@@ -593,7 +585,7 @@ namespace SRL::Sound
             struct RiffChunkHeader
             {
                 uint8_t Id[4];
-                uint32_t Size;	
+                uint32_t Size;  
             };
 
             /** @brief LIST data chunk
